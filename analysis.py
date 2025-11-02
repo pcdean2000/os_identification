@@ -76,7 +76,7 @@ class ShapAnalyzer:
         corr = self.X_test_df.corr()
         plt.figure(figsize=(len(self.feature_names), len(self.feature_names)))
         sns.heatmap(corr, annot=True, cmap="vlag", fmt=".2f")
-        plt.title("特徵相關性熱力圖 (Feature Correlation Heatmap)")
+        plt.title("Feature Correlation Heatmap")
         plt.savefig(fig_dir / "correlation_heatmap.png", bbox_inches='tight')
         plt.close()
 
@@ -104,8 +104,8 @@ class ShapAnalyzer:
             xticklabels=self.display_labels,
             yticklabels=self.display_labels,
         )
-        s.set(xlabel="預測標籤 (Predicted Label)", ylabel="真實標籤 (True Label)")
-        plt.title("混淆矩陣 (Normalized by Total)")
+        s.set(xlabel="Predicted Label", ylabel="True Label")
+        plt.title("Confusion Matrix (Normalized by Total)")
         plt.tight_layout()
         plt.savefig(fig_dir / "confusion_matrix.png")
         plt.close()
@@ -177,7 +177,7 @@ class ShapAnalyzer:
         # 總體總結圖
         plt.figure()
         shap.summary_plot(self.shap_values, self.X_test_df, show=False)
-        plt.title("SHAP 總結圖 (所有類別)")
+        plt.title("SHAP Summary Plot (All Classes)")
         plt.savefig(fig_dir / "summary_plot_all_classes.png", bbox_inches='tight')
         plt.close()
 
@@ -193,7 +193,7 @@ class ShapAnalyzer:
             
             plt.figure()
             shap.summary_plot(self.shap_values[:, :, encoded_c_index], self.X_test_df, show=False)
-            plt.title(f"SHAP 總結圖 (類別: {label_name})")
+            plt.title(f"SHAP Summary Plot (Class: {label_name})")
             plt.savefig(fig_dir / f"summary_plot_class_{label_name}.png", bbox_inches='tight')
             plt.close()
 
@@ -222,7 +222,7 @@ class ShapAnalyzer:
 
         plt.figure()
         shap.plots.bar(pred_class_shap_values, show=False)
-        plt.title("平均 SHAP 絕對值 (基於預測類別)")
+        plt.title("Mean Absolute SHAP (Based on Predicted Class)")
         plt.savefig(fig_dir / "absolute_mean_shap.png", bbox_inches='tight')
         plt.close()
 
@@ -314,8 +314,8 @@ class ShapAnalyzer:
                 )
             )
             
-        plt.xlabel("預測貢獻度 (Prediction Contribution)")
-        plt.ylabel("錯誤貢獻度 (Error Contribution)")
+        plt.xlabel("Prediction Contribution")
+        plt.ylabel("Error Contribution")
         plt.title("Prediction Contribution vs Error Contribution")
         plt.savefig(fig_dir / "error_contribution_plot.png", bbox_inches='tight')
         plt.close()
