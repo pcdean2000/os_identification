@@ -38,6 +38,7 @@ class ShapAnalyzer:
         logging.info(f"初始化 ShapAnalyzer: {model_prefix}")
         self.model = model
         
+        self.original_feature_names = list(X_test.columns) # 儲存原始欄位名稱
         # 建立一個清理過的特徵名稱列表 (例如移除 '_24h')
         # 使用正則表達式來移除 _<數字>h 這樣的後綴
         self.clean_feature_names = [re.sub(r'_\d+h$', '', col) for col in X_test.columns]
@@ -63,7 +64,14 @@ class ShapAnalyzer:
         """從 LabelEncoder 獲取用於圖表顯示的標籤名稱"""
         try:
             decoded_labels_numeric = self.label_encoder.classes_
-            return [config.OS_MAPPING_DISPLAY.get(l, str(l)) for l in decoded_labels_numeric]
+            
+            # 獲取完整標籤名稱
+            full_labels = [config.OS_MAPPING_DISPLAY.get(l, str(l)) for l in decoded_labels_numeric]
+            
+            # 僅保留第一個逗號前的名稱作為代表
+            short_labels = [label.split(',')[0] for label in full_labels]
+            
+            return short_labels
         except Exception as e:
             logging.error(f"獲取 display_labels 失敗: {e}. 將使用原始編碼標籤。")
             return [str(l) for l in self.label_encoder.classes_]
@@ -160,10 +168,10 @@ class ShapAnalyzer:
 
         for encoded_label, indices in sample_indices.items():
             try:
-                label_name = config.OS_MAPPING_DISPLAY.get(
-                    self.label_encoder.inverse_transform([encoded_label])[0],
-                    f"Class_{encoded_label}"
-                )
+                # 這裡使用 self.display_labels (已經被縮短)
+                label_name = self.display_labels[
+                    np.where(self.label_encoder.classes_ == encoded_label)[0][0]
+                ]
             except Exception:
                 label_name = f"Class_{encoded_label}"
                 
@@ -279,7 +287,7 @@ class ShapAnalyzer:
         # 4. 建立貢獻度 DataFrame
         contribution_df = pd.DataFrame(
             {
-                "Feature": self.feature_names,
+                "Feature": self.original_feature_names, # 這裡使用原始特徵名稱
                 "Prediction_Contribution": prediction_contribution,
                 "Error_Contribution": error_contribution,
             }
@@ -313,12 +321,16 @@ class ShapAnalyzer:
         )
         
         # 標記前 5 個錯誤貢獻特徵
-        for feature_name in contribution_df.index[:5]:
+        # 這裡我們使用清理過的名稱來標註圖表，避免擁擠
+        clean_name_map = dict(zip(self.original_feature_names, self.clean_feature_names))
+        
+        for feature_name_orig in contribution_df.index[:5]:
+            clean_name = clean_name_map.get(feature_name_orig, feature_name_orig)
             plt.annotate(
-                feature_name, 
+                clean_name, # 使用清理過的名稱標註
                 (
-                    contribution_df.loc[feature_name, "Prediction_Contribution"], 
-                    contribution_df.loc[feature_name, "Error_Contribution"]
+                    contribution_df.loc[feature_name_orig, "Prediction_Contribution"], 
+                    contribution_df.loc[feature_name_orig, "Error_Contribution"]
                 )
             )
             
