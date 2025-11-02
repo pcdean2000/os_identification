@@ -4,6 +4,7 @@ config.py
 """
 
 from pathlib import Path
+from typing import Dict
 
 # --- 基礎路徑 ---
 BASE_DIR = Path(__file__).resolve().parent
@@ -19,6 +20,28 @@ RAW_DATA_DIR = DATA_DIR / "raw"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
 FEATURED_DATA_DIR = DATA_DIR / "featured"
 PREPARED_DATA_DIR = DATA_DIR / "prepared"
+
+# --- OS 標籤對應 (Single Source of Truth) ---
+# 將 OS_MAPPING_DISPLAY 移至頂部，作為唯一來源
+OS_MAPPING_DISPLAY = {
+    1: "Windows,Windows-CE,Windows-Phone",
+    2: "Mac-OS,Mac-OS-X,Darwin",
+    3: "Linux,Ubuntu,Fedora",
+    4: "Android",
+    5: "iOS",
+}
+
+
+# 從 OS_MAPPING_DISPLAY 動態產生 OS_MAPPING
+def _create_os_mapping(display_map: Dict[int, str]) -> Dict[str, int]:
+    """從顯示用的 map 逆向建立 MAPPING 字典"""
+    mapping = {}
+    for int_label, string_list in display_map.items():
+        os_names = string_list.split(",")
+        for name in os_names:
+            mapping[name.strip()] = int_label
+    return mapping
+
 
 # --- 1. 資料前處理 (Data Preprocessing) ---
 PREPROCESS_COLUMNS = ["ts", "te", "sa", "da", "sp", "dp", "os", "win", "syn", "ttl"]
@@ -63,19 +86,8 @@ LASTO23_COLS = [
 ]
 
 # --- 2. 特徵工程 (Feature Engineering) ---
-OS_MAPPING = {
-    "Windows": 1,
-    "Windows CE": 1,
-    "Windows Phone": 1,
-    "Mac OS": 2,
-    "Mac OS X": 2,
-    "Darwin": 2,
-    "Linux": 3,
-    "Ubuntu": 3,
-    "Fedora": 3,
-    "Android": 4,
-    "iOS": 5,
-}
+# OS_MAPPING 現在從上面的 OS_MAPPING_DISPLAY 動態產生
+OS_MAPPING = _create_os_mapping(OS_MAPPING_DISPLAY)
 
 # 聚合後需要標準化的特徵
 FEATURE_COLS_TO_SCALE = ["nsp", "csa", "stdtd", "stdp", "enp"]
@@ -96,13 +108,6 @@ NON_FEATURE_COLS = ["ts", "te", "da", "sa", "td", "sp", "dp", "spwin"]
 MIN_LABEL_COUNT = 100
 
 # --- 4. 分析 (Analysis) ---
-OS_MAPPING_DISPLAY = {
-    1: "Windows,Windows-CE,Windows-Phone",
-    2: "Mac-OS,Mac-OS-X,Darwin",
-    3: "Linux,Ubuntu,Fedora",
-    4: "Android",
-    5: "iOS",
-}
 
 # SHAP 分析中每個類別要繪製的樣本數
 SHAP_TOP_N_SAMPLES = 10

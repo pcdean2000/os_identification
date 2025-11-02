@@ -54,7 +54,7 @@ class ShapAnalyzer:
     def _get_display_labels(self) -> List[str]:
         """從 LabelEncoder 獲取用於圖表顯示的標籤名稱"""
         try:
-            decoded_labels_numeric = self.label_encoder.inverse_transform(self.label_encoder.classes_)
+            decoded_labels_numeric = self.label_encoder.classes_
             return [config.OS_MAPPING_DISPLAY.get(l, str(l)) for l in decoded_labels_numeric]
         except Exception as e:
             logging.error(f"獲取 display_labels 失敗: {e}. 將使用原始編碼標籤。")
@@ -184,12 +184,15 @@ class ShapAnalyzer:
         # 分類別總結圖
         for c in self.label_encoder.classes_:
             try:
-                label_name = self.display_labels[c]
-            except IndexError:
+                # 這裡的 c 是原始標籤 (例如 1, 2, 4, 5)，而不是編碼後的 (0, 1, 2, 3)
+                # 因此我們需要先找到 c 在 le.classes_ 中的索引
+                encoded_c_index = np.where(self.label_encoder.classes_ == c)[0][0]
+                label_name = self.display_labels[encoded_c_index]
+            except Exception:
                  label_name = f"Class_{c}"
             
             plt.figure()
-            shap.summary_plot(self.shap_values[:, :, c], self.X_test_df, show=False)
+            shap.summary_plot(self.shap_values[:, :, encoded_c_index], self.X_test_df, show=False)
             plt.title(f"SHAP 總結圖 (類別: {label_name})")
             plt.savefig(fig_dir / f"summary_plot_class_{label_name}.png", bbox_inches='tight')
             plt.close()
@@ -205,8 +208,9 @@ class ShapAnalyzer:
 
         # 獲取每個樣本「被預測類別」的 SHAP 值
         new_shap_values = []
-        for i, pred_class in enumerate(self.y_pred):
-            new_shap_values.append(self.shap_values.values[i][:, pred_class])
+        for i, pred_class_encoded in enumerate(self.y_pred):
+            # y_pred 是編碼後的 [0, 1, 2, 3]
+            new_shap_values.append(self.shap_values.values[i][:, pred_class_encoded])
         
         # 建立一個新的 SHAP Explanation 物件
         pred_class_shap_values = shap.Explanation(
@@ -235,9 +239,10 @@ class ShapAnalyzer:
         # 1. 獲取每個樣本「真實類別」的 SHAP 值
         new_shap_values = []
         new_base_values = []
-        for i, truth_class in enumerate(self.y_test):
-            new_shap_values.append(self.shap_values.values[i][:, truth_class])
-            new_base_values.append(self.explainer.expected_value[truth_class])
+        for i, truth_class_encoded in enumerate(self.y_test):
+            # y_test 是編碼後的 [0, 1, 2, 3]
+            new_shap_values.append(self.shap_values.values[i][:, truth_class_encoded])
+            new_base_values.append(self.explainer.expected_value[truth_class_encoded])
         
         y_truth_shap_values = np.array(new_shap_values) # (n_samples, n_features)
         y_truth_base_values = np.array(new_base_values) # (n_samples,)
@@ -257,9 +262,6 @@ class ShapAnalyzer:
         )
         
         # 總 SHAP 值 (所有類別加總)
-        # 這是計算 "總 SHAP 影響力" - "缺少該特徵時對真實類別的 SHAP 影響力"
-        # 這部分邏輯似乎是想計算 "該特徵對非真實類別的貢獻"
-        
         total_shap_effect_per_feature = self.shap_values.values.sum(axis=2)
 
         error_diff = total_shap_effect_per_feature - np.abs(y_truth_shap_values)
@@ -325,7 +327,7 @@ class ShapAnalyzer:
         logging.info(f"===== 開始分析: {self.model_prefix} =====")
         try:
             self.run_predictions()
-            self.plot_correlation_heatmap()
+            # self.plot_correlation_heatmap()
             self.plot_confusion_matrix()
             self.run_shap_analysis()
             # self.plot_waterfall_plots()
