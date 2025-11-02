@@ -4,6 +4,7 @@ analysis.py
 包含 ShapAnalyzer 類別，專注於 SHAP 分析、繪圖和特徵貢獻度計算。
 """
 import logging
+import re  # 匯入正則表達式模組
 from pathlib import Path
 from typing import List, Any
 
@@ -36,9 +37,16 @@ class ShapAnalyzer:
     ):
         logging.info(f"初始化 ShapAnalyzer: {model_prefix}")
         self.model = model
-        self.X_test_df = X_test
+        
+        # 建立一個清理過的特徵名稱列表 (例如移除 '_24h')
+        # 使用正則表達式來移除 _<數字>h 這樣的後綴
+        self.clean_feature_names = [re.sub(r'_\d+h$', '', col) for col in X_test.columns]
+        
+        self.X_test_df = X_test.copy() # 複製以避免 InplaceWarning
+        self.X_test_df.columns = self.clean_feature_names
+        self.feature_names = self.clean_feature_names # 更新 self.feature_names
+
         self.y_test = y_test
-        self.feature_names = list(X_test.columns)
         self.label_encoder = label_encoder
         self.model_prefix = model_prefix
         

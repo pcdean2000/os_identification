@@ -24,8 +24,8 @@ PREPARED_DATA_DIR = DATA_DIR / "prepared"
 # --- OS 標籤對應 (Single Source of Truth) ---
 # 將 OS_MAPPING_DISPLAY 移至頂部，作為唯一來源
 OS_MAPPING_DISPLAY = {
-    1: "Windows,Windows-CE,Windows-Phone",
-    2: "Mac-OS,Mac-OS-X,Darwin",
+    1: "Windows,Windows CE,Windows Phone",
+    2: "Mac OS,Mac OS X,Darwin",
     3: "Linux,Ubuntu,Fedora",
     4: "Android",
     5: "iOS",
