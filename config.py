@@ -6,6 +6,21 @@ config.py
 from pathlib import Path
 from typing import Dict
 
+from xgboost import XGBClassifier
+from sklearn.ensemble import (
+    AdaBoostClassifier,
+    BaggingClassifier,
+    ExtraTreesClassifier,
+    GradientBoostingClassifier,
+    HistGradientBoostingClassifier,
+    RandomForestClassifier
+)
+from sklearn.tree import DecisionTreeClassifier, ExtraTreeClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn import svm
+from catboost import CatBoostClassifier
+
 # --- 基礎路徑 ---
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -111,3 +126,74 @@ MIN_LABEL_COUNT = 100
 
 # SHAP 分析中每個類別要繪製的樣本數
 SHAP_TOP_N_SAMPLES = 10
+
+# --- 5. 模型配置 (Model Configuration) ---
+
+MODEL_CONFIGS = {
+    "xgboost": {
+        "class": XGBClassifier,
+        "params": {"n_estimators": 100, "verbosity": 0, "n_jobs": -1},
+        "tree_friendly": True
+    },
+    "randomforest": {
+        "class": RandomForestClassifier,
+        "params": {"n_estimators": 100, "verbose": 0, "n_jobs": -1},
+        "tree_friendly": True
+    },
+    "extratrees": {
+        "class": ExtraTreesClassifier,
+        "params": {"n_estimators": 100, "verbose": 0, "n_jobs": -1},
+        "tree_friendly": True
+    },
+    "decisiontree": {
+        "class": DecisionTreeClassifier,
+        "params": {},
+        "tree_friendly": True
+    },
+    "gradientboosting": {
+        "class": GradientBoostingClassifier,
+        "params": {"n_estimators": 100, "verbose": 0},
+        "tree_friendly": True
+    },
+    "histgradientboosting": {
+        "class": HistGradientBoostingClassifier,
+        "params": {"verbose": 0},
+        "tree_friendly": True # 通常支援
+    },
+    "catboost": {
+        "class": CatBoostClassifier,
+        "params": {"n_estimators": 100, "verbose": 0, "allow_writing_files": False},
+        "tree_friendly": True
+    },
+    "adaboost": {
+        "class": AdaBoostClassifier,
+        "params": {"n_estimators": 100},
+        "tree_friendly": True # 假設基底為樹
+    },
+    "extratree": {
+        "class": ExtraTreeClassifier,
+        "params": {},
+        "tree_friendly": True
+    },
+    # --- 以下為非樹模型或複雜組合 ---
+    "bagging": {
+        "class": BaggingClassifier,
+        "params": {"n_estimators": 100, "n_jobs": -1},
+        "tree_friendly": False 
+    },
+    "gaussiannb": {
+        "class": GaussianNB,
+        "params": {},
+        "tree_friendly": False
+    },
+    "kneighbors": {
+        "class": KNeighborsClassifier,
+        "params": {"n_neighbors": 3, "n_jobs": -1},
+        "tree_friendly": False
+    },
+    "svc": {
+        "class": svm.SVC,
+        "params": {"C": 1, "kernel": "rbf", "probability": True, "verbose": False},
+        "tree_friendly": False
+    },
+}

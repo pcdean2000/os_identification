@@ -2,19 +2,18 @@
 main.py
 專案的主入口點 (Orchestrator)。
 負責：
-1. 解析命令列參數 (要執行的階段)。
+1. 解析命令列參數 (要執行的階段、使用的模型)。
 2. 協調執行 data_preprocessing, feature_engineering。
-3. 執行實驗流程 (應用策略模式)。
+3. 執行實驗流程 (應用策略模式)，支援透過參數指定模型。
 """
 
 import logging
 import argparse
+import time
+import sys
 from pathlib import Path
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
-
-from xgboost import XGBClassifier
-from joblib import load
+from typing import List, Dict, Any, Optional
 
 import config
 import utils
@@ -47,34 +46,32 @@ class RecursiveErrorContributionElimination(ExperimentStrategy):
         dataset_paths: List[Path],
         estimator_class: Any,
         estimator_params: Dict,
-        n_features_to_eliminate: int = 13
+        n_features_to_eliminate: int = 13,
+        model_name: str = "model"
     ):
         self.dataset_paths = dataset_paths
         self.estimator_class = estimator_class
         self.estimator_params = estimator_params
         self.n_features_to_eliminate = n_features_to_eliminate
-        
-        # 初始化每個資料集的「待消除特徵列表」
+        self.model_name = model_name
         self.map_eliminate_features: Dict[str, List[str]] = {
             dataset.stem: [] for dataset in self.dataset_paths
         }
-        logging.info("初始化 RecursiveErrorContributionElimination 策略")
+        logging.info(f"[{self.model_name}] 初始化 RecursiveErrorContributionElimination 策略")
         logging.debug(f"將消除 {self.n_features_to_eliminate} 個特徵")
 
     def execute(self):
-        logging.info("===== 開始執行「遞歸錯誤貢獻消除」實驗 =====")
+        logging.info(f"===== [{self.model_name}] 開始執行「遞歸錯誤貢獻消除」實驗 =====")
 
         for i in range(self.n_features_to_eliminate):
-            logging.info(f"--- 實驗疊代 {i+1} / {self.n_features_to_eliminate} ---")
-            
-            # 儲存此次疊代中每個資料集要移除的特徵
+            logging.info(f"--- [{self.model_name}] 實驗疊代 {i+1} / {self.n_features_to_eliminate} ---")
             features_to_add_to_elim_list: Dict[str, str] = {}
 
             for dataset_path in self.dataset_paths:
                 dataset_name = dataset_path.stem
                 current_elim_features = self.map_eliminate_features[dataset_name]
                 
-                logging.info(f"處理資料集: {dataset_name}")
+                logging.info(f"[{self.model_name}] 處理資料集: {dataset_name}")
                 logging.info(f"目前已消除 {len(current_elim_features)} 個特徵: {current_elim_features}")
 
                 try:
@@ -110,19 +107,19 @@ class RecursiveErrorContributionElimination(ExperimentStrategy):
                     
                     # 3. 找到貢獻度最高的特徵
                     if contribution_df.empty:
-                        logging.warning(f"{dataset_name} 的貢獻度為空，無法消除特徵")
+                        logging.warning(f"[{self.model_name}] {dataset_name} 的貢獻度為空，無法消除特徵")
                         continue
-                        
+
                     top_error_feature = contribution_df.index[0]
                     features_to_add_to_elim_list[dataset_name] = top_error_feature
-                    logging.info(f"{dataset_name} 的下一個消除特徵: {top_error_feature}")
+                    logging.info(f"[{self.model_name}] {dataset_name} 的下一個消除特徵: {top_error_feature}")
 
                 except Exception as e:
-                    logging.error(f"處理 {dataset_name} (疊代 {i}) 時失敗: {e}", exc_info=True)
+                    logging.error(f"[{self.model_name}] 處理 {dataset_name} (疊代 {i}) 時失敗: {e}", exc_info=True)
             
             # 4. 更新待消除列表
             if not features_to_add_to_elim_list:
-                logging.warning("沒有找到任何特徵可供消除，實驗提前終止。")
+                logging.warning(f"[{self.model_name}] 無特徵可消除，實驗終止。")
                 break
                 
             for dataset_name, feature_to_elim in features_to_add_to_elim_list.items():
@@ -131,13 +128,67 @@ class RecursiveErrorContributionElimination(ExperimentStrategy):
                 else:
                     logging.warning(f"特徵 {feature_to_elim} 已在 {dataset_name} 的消除列表中")
 
-        logging.info("===== 實驗流程執行完畢 =====")
+        logging.info(f"===== [{self.model_name}] 實驗流程執行完畢 =====")
+
+
+def run_experiment_stage(dataset_paths: List[Path], n_features_to_eliminate: int, model_name_arg: str):
+    """
+    執行實驗階段：
+    根據指定的模型名稱執行 RFE 策略。
+    """
+    model_key = model_name_arg.lower()
+
+    # 1. 檢查模型是否存在於註冊表
+    # 使用 config.MODEL_CONFIGS
+    if model_key not in config.MODEL_CONFIGS: 
+        available_models = list(config.MODEL_CONFIGS.keys())
+        error_msg = f"找不到指定的模型: '{model_name_arg}'。可用模型: {available_models}"
+        logging.error(error_msg)
+        print(f"Error: {error_msg}")
+        return
+
+    # 使用 config.MODEL_CONFIGS
+    model_cfg = config.MODEL_CONFIGS[model_key] 
+    estimator_class = model_cfg["class"]
+    
+    # 2. 檢查模型類別是否可用
+    if estimator_class is None:
+        error_msg = f"模型 '{model_name_arg}' 對應的套件未安裝，無法執行。"
+        logging.error(error_msg)
+        print(f"Error: {error_msg}")
+        return
+
+    # 3. SHAP 相容性檢查與警告
+    if not model_cfg["tree_friendly"]:
+        warn_msg = (
+            f"\n{'!'*40}\n"
+            f"!!! 警告: SHAP 相容性問題 !!!\n"
+            f"您選擇的模型 '{model_name_arg}' 並非原生的樹模型。\n"
+            f"目前的實驗流程依賴 SHAP TreeExplainer。\n"
+            f"強制執行可能會導致分析階段失敗，或效率極低。\n"
+            f"{'!'*40}\n"
+        )
+        logging.warning(warn_msg.replace("\n", " "))
+        print(warn_msg, flush=True)
+        time.sleep(2)
+        print("... 2秒後繼續執行 ...\n")
+
+    # 4. 執行實驗
+    logging.info(f"準備以模型 [{model_key}] 開始實驗")
+    try:
+        strategy = RecursiveErrorContributionElimination(
+            dataset_paths=dataset_paths,
+            estimator_class=estimator_class,
+            estimator_params=model_cfg["params"],
+            n_features_to_eliminate=n_features_to_eliminate,
+            model_name=model_key
+        )
+        strategy.execute()
+    except Exception as e:
+        logging.error(f"模型 [{model_key}] 實驗執行失敗: {e}", exc_info=True)
 
 
 def main():
-    """
-    主函式：解析參數並協調執行不同階段。
-    """
     parser = argparse.ArgumentParser(description="MLOps 專案主執行腳本")
     parser.add_argument(
         "--stage",
@@ -159,6 +210,12 @@ def main():
         type=int,
         default=13,
         help="實驗階段要消除的特徵總數"
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="xgboost",
+        help=f"實驗階段使用的模型。預設: xgboost。可用: {list(config.MODEL_CONFIGS.keys())}" 
     )
     
     args = parser.parse_args()
@@ -189,30 +246,22 @@ def main():
     # --- 階段 3: 實驗 (訓練與分析) ---
     if 'experiment' in stages:
         try:
-            # 1. 設定模型
-            estimator_class = XGBClassifier
-            estimator_params = {"n_estimators": 100, "verbosity": 0, "n_jobs": -1}
-            
-            # 2. 獲取備妥的資料集
+            # 獲取備妥的資料集
             if not config.PREPARED_DATA_DIR.exists():
                 logging.error(f"找不到備妥的資料目錄: {config.PREPARED_DATA_DIR}")
                 return
-                
-            dataset_paths = list(config.PREPARED_DATA_DIR.iterdir())
-            dataset_paths = [p for p in dataset_paths if p.is_dir()] # 確保只選目錄
+
+            dataset_paths = [p for p in config.PREPARED_DATA_DIR.iterdir() if p.is_dir()]
             
             if not dataset_paths:
                 logging.error("在 PREPARED_DATA_DIR 中找不到任何資料集")
                 return
 
-            # 3. 實例化並執行策略
-            strategy = RecursiveErrorContributionElimination(
+            run_experiment_stage(
                 dataset_paths=dataset_paths,
-                estimator_class=estimator_class,
-                estimator_params=estimator_params,
-                n_features_to_eliminate=args.n_features
+                n_features_to_eliminate=args.n_features,
+                model_name_arg=args.model
             )
-            strategy.execute()
             
         except Exception as e:
             logging.error(f"實驗階段失敗: {e}", exc_info=True)
