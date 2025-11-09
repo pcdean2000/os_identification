@@ -2,9 +2,9 @@
 main.py
 專案的主入口點 (Orchestrator)。
 負責：
-1. 解析命令列參數 (要執行的階段、使用的模型)。
+1. 解析命令列參數 (要執行的階段、使用的模型、執行類型)。
 2. 協調執行 data_preprocessing, feature_engineering。
-3. 執行實驗流程 (應用策略模式)，支援透過參數指定模型。
+3. 執行實驗流程 (RFE 或 CV)。
 """
 
 import logging
@@ -75,7 +75,7 @@ class RecursiveErrorContributionElimination(ExperimentStrategy):
                 logging.info(f"目前已消除 {len(current_elim_features)} 個特徵: {current_elim_features}")
 
                 try:
-                    # 1. 訓練
+                    # 1. 訓練 (將呼叫 trainer.run()，執行單次 split)
                     estimator = self.estimator_class(**self.estimator_params)
                     trainer = ModelTrainer(
                         dataset_path=dataset_path,
@@ -130,11 +130,8 @@ class RecursiveErrorContributionElimination(ExperimentStrategy):
         logging.info(f"===== [{self.model_name}] 實驗流程執行完畢 =====")
 
 
-def run_experiment_stage(dataset_paths: List[Path], n_features_to_eliminate: int, model_name_arg: str):
-    """
-    執行實驗階段：
-    根據指定的模型名稱執行 RFE 策略。
-    """
+def get_model_config(model_name_arg: str) -> Dict:
+    """載入並驗證模型設定"""
     
     # 延遲載入: 僅在此處呼叫函式以載入重型模型庫
     MODEL_CONFIGS = config.load_model_configs()
@@ -158,14 +155,25 @@ def run_experiment_stage(dataset_paths: List[Path], n_features_to_eliminate: int
         logging.error(error_msg)
         print(f"Error: {error_msg}")
         sys.exit(1) # 錯誤時結束程式
+        
+    return model_cfg
 
-    # 3. SHAP 相容性檢查與警告
+
+def run_experiment_stage(dataset_paths: List[Path], n_features_to_eliminate: int, model_name_arg: str):
+    """
+    (RFE 流程) 執行實驗階段：
+    根據指定的模型名稱執行 RFE 策略。
+    """
+    model_cfg = get_model_config(model_name_arg)
+    model_key = model_name_arg.lower()
+
+    # 3. SHAP 相容性檢查與警告 (RFE 依賴 SHAP)
     if not model_cfg["tree_friendly"]:
         warn_msg = (
             f"\n{'!'*40}\n"
             f"!!! 警告: SHAP 相容性問題 !!!\n"
             f"您選擇的模型 '{model_name_arg}' 並非原生的樹模型。\n"
-            f"目前的實驗流程依賴 SHAP TreeExplainer。\n"
+            f"RFE 流程依賴 SHAP TreeExplainer。\n"
             f"強制執行可能會導致分析階段失敗，或效率極低。\n"
             f"{'!'*40}\n"
         )
@@ -174,20 +182,50 @@ def run_experiment_stage(dataset_paths: List[Path], n_features_to_eliminate: int
         time.sleep(2)
         print("... 2秒後繼續執行 ...\n")
 
-    # 4. 執行實驗
-    logging.info(f"準備以模型 [{model_key}] 開始實驗")
+    # 4. 執行 RFE 實驗
+    logging.info(f"準備以模型 [{model_key}] 開始 [RFE] 實驗")
     try:
         strategy = RecursiveErrorContributionElimination(
             dataset_paths=dataset_paths,
-            estimator_class=estimator_class,
+            estimator_class=model_cfg["class"],
             estimator_params=model_cfg["params"],
             n_features_to_eliminate=n_features_to_eliminate,
             model_name=model_key
         )
         strategy.execute()
     except Exception as e:
-        logging.error(f"模型 [{model_key}] 實驗執行失敗: {e}", exc_info=True)
+        logging.error(f"模型 [{model_key}] RFE 實驗執行失敗: {e}", exc_info=True)
         sys.exit(1) # 實驗失敗時結束程式
+
+
+def run_cv_stage(dataset_paths: List[Path], model_name_arg: str):
+    """
+    執行 5-Fold CV 評估階段：
+    對每個資料集執行 5-Fold CV，並訓練最終模型。
+    """
+    model_cfg = get_model_config(model_name_arg)
+    model_key = model_name_arg.lower()
+
+    logging.info(f"準備以模型 [{model_key}] 開始 [5-Fold CV] 評估")
+
+    for dataset_path in dataset_paths:
+        logging.info(f"--- [{model_key}] 處理資料集: {dataset_path.stem} ---")
+        try:
+            estimator = model_cfg["class"](**model_cfg["params"])
+            # 注意：這裡傳入空的 eliminate_features
+            trainer = ModelTrainer(
+                dataset_path=dataset_path,
+                estimator=estimator,
+                eliminate_features=[] 
+            )
+            # 呼叫新的 CV + 訓練方法
+            trainer.run_cv_and_train_final(n_splits=5)
+            
+        except Exception as e:
+            logging.error(f"模型 [{model_key}] CV 評估 {dataset_path.stem} 時失敗: {e}", exc_info=True)
+            # 不中止，繼續下一個資料集
+            
+    logging.info(f"===== [{model_key}] CV 評估流程執行完畢 =====")
 
 
 def main():
@@ -200,6 +238,14 @@ def main():
         default=['all'],
         help="要執行的階段 (可多選)。 'all' 代表所有階段。"
     )
+    # --- 新增 run-type 參數 ---
+    parser.add_argument(
+        "--run-type",
+        type=str,
+        choices=['rfe', 'cv'],
+        default='rfe',
+        help="實驗類型: 'rfe' (遞歸錯誤貢獻消除) 或 'cv' (5-Fold 交叉驗證)。僅在 'experiment' 階段生效。 (預設: rfe)"
+    )
     parser.add_argument(
         "--freq",
         type=int,
@@ -211,7 +257,7 @@ def main():
         "--n-features",
         type=int,
         default=13,
-        help="實驗階段要消除的特徵總數"
+        help="[RFE 模式] 實驗階段要消除的特徵總數 (預設: 13)"
     )
     parser.add_argument(
         "--model",
@@ -231,7 +277,11 @@ def main():
         stages = ['preprocess', 'feature', 'experiment']
 
     logging.info(f"將執行以下階段: {stages}")
-    logging.info(f"特徵頻率: {args.freq}")
+    if 'experiment' in stages:
+        logging.info(f"實驗類型: {args.run_type}")
+        logging.info(f"實驗模型: {args.model}")
+    if 'feature' in stages:
+        logging.info(f"特徵頻率: {args.freq}")
 
     # --- 階段 1: 資料前處理 ---
     if 'preprocess' in stages:
@@ -239,7 +289,7 @@ def main():
             data_preprocessing.run_preprocessing()
         except Exception as e:
             logging.error(f"資料前處理階段失敗: {e}", exc_info=True)
-            sys.exit(1) # 錯誤時結束程式
+            sys.exit(1)
 
     # --- 階段 2: 特徵工程 ---
     if 'feature' in stages:
@@ -247,7 +297,7 @@ def main():
             feature_engineering.run_feature_engineering(args.freq)
         except Exception as e:
             logging.error(f"特徵工程階段失敗: {e}", exc_info=True)
-            sys.exit(1) # 錯誤時結束程式
+            sys.exit(1)
 
     # --- 階段 3: 實驗 (訓練與分析) ---
     if 'experiment' in stages:
@@ -255,23 +305,32 @@ def main():
             # 獲取備妥的資料集
             if not config.PREPARED_DATA_DIR.exists():
                 logging.error(f"找不到備妥的資料目錄: {config.PREPARED_DATA_DIR}")
-                sys.exit(1) # 錯誤時結束程式
+                sys.exit(1)
 
             dataset_paths = [p for p in config.PREPARED_DATA_DIR.iterdir() if p.is_dir()]
             
             if not dataset_paths:
                 logging.error("在 PREPARED_DATA_DIR 中找不到任何資料集")
-                sys.exit(1) # 錯誤時結束程式
+                sys.exit(1)
 
-            run_experiment_stage(
-                dataset_paths=dataset_paths,
-                n_features_to_eliminate=args.n_features,
-                model_name_arg=args.model
-            )
+            # --- 根據 run-type 選擇執行流程 ---
+            if args.run_type == 'rfe':
+                logging.info(f"RFE 模式：將消除 {args.n_features} 個特徵")
+                run_experiment_stage(
+                    dataset_paths=dataset_paths,
+                    n_features_to_eliminate=args.n_features,
+                    model_name_arg=args.model
+                )
+            elif args.run_type == 'cv':
+                logging.info("CV 模式：將執行 5-Fold 交叉驗證並訓練最終模型")
+                run_cv_stage(
+                    dataset_paths=dataset_paths,
+                    model_name_arg=args.model
+                )
             
         except Exception as e:
             logging.error(f"實驗階段失敗: {e}", exc_info=True)
-            sys.exit(1) # 錯誤時結束程式
+            sys.exit(1)
 
     logging.info("===== 所有請求的階段均已執行完畢 =====")
 
