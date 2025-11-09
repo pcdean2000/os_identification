@@ -4,7 +4,7 @@ analysis.py
 包含 ShapAnalyzer 類別，專注於 SHAP 分析、繪圖和特徵貢獻度計算。
 """
 import logging
-import re  # 匯入正則表達式模組
+import re
 from pathlib import Path
 from typing import List, Any
 
@@ -168,7 +168,7 @@ class ShapAnalyzer:
 
         for encoded_label, indices in sample_indices.items():
             try:
-                # 這裡使用 self.display_labels (已經被縮短)
+                # 這裡使用 self.display_labels (已經被縮短的標籤)
                 label_name = self.display_labels[
                     np.where(self.label_encoder.classes_ == encoded_label)[0][0]
                 ]
@@ -353,8 +353,8 @@ class ShapAnalyzer:
             # self.plot_waterfall_plots()
             # self.plot_summary_plots()
             # self.plot_absolute_mean_shap()
-            # self.plot_force_plots() # HTML 輸出，暫時註解
-            # self.plot_decision_plots() # 
+            # self.plot_force_plots()
+            # self.plot_decision_plots()
             
             contribution_df = self.calculate_feature_contributions()
             logging.info(f"===== 分析完成: {self.model_prefix} =====")

@@ -4,7 +4,7 @@ config.py
 """
 
 from pathlib import Path
-from typing import Dict, List, Any # 【修改】新增 List, Any
+from typing import Dict, List, Any
 
 # --- 基礎路徑 ---
 BASE_DIR = Path(__file__).resolve().parent
@@ -40,9 +40,45 @@ def _create_os_mapping(display_map: Dict[int, str]) -> Dict[str, int]:
 
 # --- 1. 資料前處理 (Data Preprocessing) ---
 PREPROCESS_COLUMNS = ["ts", "te", "sa", "da", "sp", "dp", "os", "win", "syn", "ttl"]
-LASTO18_COLS = [ ... ] # (內容不變，為求簡潔省略)
-LASTO20_COLS = [ ... ]
-LASTO23_COLS = [ ... ]
+
+LASTO18_COLS = [
+    "date_first_seen",
+    "date_last_seen",
+    "src_IP_addr",
+    "dst_IP_addr",
+    "src_pt",
+    "dst_Pt",
+    "HTTP_Host_OS",
+    "TCP_window_size",
+    "TCP_syn_size",
+    "TCP_TTL",
+]
+
+LASTO20_COLS = [
+    "Date flow start",
+    "Date flow end",
+    "Src IPv4",
+    "Dst IPv4",
+    "sPort",
+    "dPort",
+    "Ground Truth OS",
+    "TCP win",
+    "SYN size",
+    "TCP SYN TTL",
+]
+
+LASTO23_COLS = [
+    "start",
+    "end",
+    "SRC IP",
+    "DST IP",
+    "SRC port",
+    "DST port",
+    "UA OS family",
+    "TCP Win Size",
+    "TCP SYN Size",
+    "TCP SYN TTL",
+]
 
 # --- 2. 特徵工程 (Feature Engineering) ---
 OS_MAPPING = _create_os_mapping(OS_MAPPING_DISPLAY)

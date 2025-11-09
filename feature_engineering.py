@@ -13,6 +13,7 @@ import pandas as pd
 from datasets import Dataset, concatenate_datasets, load_from_disk
 from scipy.stats.mstats import winsorize
 from sklearn import preprocessing
+from sklearn.ensemble import IsolationForest
 
 import config
 import utils
@@ -282,13 +283,23 @@ def merging_datasets(dataset_name: str, src_dir: Path = config.FEATURED_DATA_DIR
 
 def eliminate_outliers(dataset: Dataset) -> Dataset:
     """
-    (此功能在原始碼中被註解，暫時保留)
     使用 IsolationForest 移除異常值。
     """
     logging.warning("注意：異常值移除功能 (eliminate_outliers) 目前未啟用。")
-    return dataset
-    # logging.info("Eliminate outliers")
-    # ... (原始邏輯)
+    df = dataset.to_pandas()
+    df.drop(
+        columns=["ts", "te", "da", "sa", "td", "sp", "dp", "spwin", "os"],
+        inplace=True,
+        errors="ignore",
+    )
+
+    clf = IsolationForest(verbose=2, max_samples=10000)
+    clf.fit(df)
+    y_pred = clf.predict(df)
+    mask = y_pred == 1
+
+    df = dataset.to_pandas()[mask]
+    return Dataset.from_pandas(df)
 
 
 def save_merged_dataset(merged_dataset: Dataset, dataset_name: str, dst_dir: Path = config.PREPARED_DATA_DIR):
