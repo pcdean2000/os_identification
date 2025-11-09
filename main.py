@@ -23,7 +23,7 @@ from training import ModelTrainer
 from analysis import ShapAnalyzer
 
 # 設定主日誌
-utils.setup_logging(__file__)
+# utils.setup_logging(__file__)
 
 
 # --- 實驗流程策略模式 ---
@@ -90,12 +90,11 @@ class RecursiveErrorContributionElimination(ExperimentStrategy):
                     model_prefix = trainer.get_model_prefix()
                     
                     # 獲取剛訓練好的模型和資料
-                    model = trainer.estimator
                     X_test_df, y_test_s = trainer.get_test_data()
                     label_encoder = trainer.get_label_encoder()
                     
                     analyzer = ShapAnalyzer(
-                        model=model,
+                        model=trainer.estimator,
                         X_test=X_test_df,
                         y_test=y_test_s,
                         label_encoder=label_encoder,
@@ -136,19 +135,21 @@ def run_experiment_stage(dataset_paths: List[Path], n_features_to_eliminate: int
     執行實驗階段：
     根據指定的模型名稱執行 RFE 策略。
     """
+    
+    # 延遲載入: 僅在此處呼叫函式以載入重型模型庫
+    MODEL_CONFIGS = config.load_model_configs()
+    
     model_key = model_name_arg.lower()
 
     # 1. 檢查模型是否存在於註冊表
-    # 使用 config.MODEL_CONFIGS
-    if model_key not in config.MODEL_CONFIGS: 
-        available_models = list(config.MODEL_CONFIGS.keys())
+    if model_key not in MODEL_CONFIGS: 
+        available_models = list(MODEL_CONFIGS.keys())
         error_msg = f"找不到指定的模型: '{model_name_arg}'。可用模型: {available_models}"
         logging.error(error_msg)
         print(f"Error: {error_msg}")
-        return
+        sys.exit(1)
 
-    # 使用 config.MODEL_CONFIGS
-    model_cfg = config.MODEL_CONFIGS[model_key] 
+    model_cfg = MODEL_CONFIGS[model_key] 
     estimator_class = model_cfg["class"]
     
     # 2. 檢查模型類別是否可用
@@ -156,7 +157,7 @@ def run_experiment_stage(dataset_paths: List[Path], n_features_to_eliminate: int
         error_msg = f"模型 '{model_name_arg}' 對應的套件未安裝，無法執行。"
         logging.error(error_msg)
         print(f"Error: {error_msg}")
-        return
+        sys.exit(1) # 錯誤時結束程式
 
     # 3. SHAP 相容性檢查與警告
     if not model_cfg["tree_friendly"]:
@@ -186,6 +187,7 @@ def run_experiment_stage(dataset_paths: List[Path], n_features_to_eliminate: int
         strategy.execute()
     except Exception as e:
         logging.error(f"模型 [{model_key}] 實驗執行失敗: {e}", exc_info=True)
+        sys.exit(1) # 實驗失敗時結束程式
 
 
 def main():
@@ -196,7 +198,7 @@ def main():
         nargs='+',
         choices=['preprocess', 'feature', 'experiment', 'all'],
         default=['all'],
-        help="要執行的階段 (可多選)"
+        help="要執行的階段 (可多選)。 'all' 代表所有階段。"
     )
     parser.add_argument(
         "--freq",
@@ -215,12 +217,16 @@ def main():
         "--model",
         type=str,
         default="xgboost",
-        help=f"實驗階段使用的模型。預設: xgboost。可用: {list(config.MODEL_CONFIGS.keys())}" 
+        help=f"實驗階段使用的模型。預設: xgboost。可用: {config.SUPPORTED_MODEL_NAMES}" 
     )
     
     args = parser.parse_args()
-    stages = args.stage
     
+    # 設定主日誌
+    utils.setup_logging(__file__)
+    
+    stages = args.stage
+
     if 'all' in stages:
         stages = ['preprocess', 'feature', 'experiment']
 
@@ -233,7 +239,7 @@ def main():
             data_preprocessing.run_preprocessing()
         except Exception as e:
             logging.error(f"資料前處理階段失敗: {e}", exc_info=True)
-            return # 如果第一階段失敗，後續無法進行
+            sys.exit(1) # 錯誤時結束程式
 
     # --- 階段 2: 特徵工程 ---
     if 'feature' in stages:
@@ -241,7 +247,7 @@ def main():
             feature_engineering.run_feature_engineering(args.freq)
         except Exception as e:
             logging.error(f"特徵工程階段失敗: {e}", exc_info=True)
-            return # 如果第二階段失敗，實驗無法進行
+            sys.exit(1) # 錯誤時結束程式
 
     # --- 階段 3: 實驗 (訓練與分析) ---
     if 'experiment' in stages:
@@ -249,13 +255,13 @@ def main():
             # 獲取備妥的資料集
             if not config.PREPARED_DATA_DIR.exists():
                 logging.error(f"找不到備妥的資料目錄: {config.PREPARED_DATA_DIR}")
-                return
+                sys.exit(1) # 錯誤時結束程式
 
             dataset_paths = [p for p in config.PREPARED_DATA_DIR.iterdir() if p.is_dir()]
             
             if not dataset_paths:
                 logging.error("在 PREPARED_DATA_DIR 中找不到任何資料集")
-                return
+                sys.exit(1) # 錯誤時結束程式
 
             run_experiment_stage(
                 dataset_paths=dataset_paths,
@@ -265,6 +271,7 @@ def main():
             
         except Exception as e:
             logging.error(f"實驗階段失敗: {e}", exc_info=True)
+            sys.exit(1) # 錯誤時結束程式
 
     logging.info("===== 所有請求的階段均已執行完畢 =====")
 

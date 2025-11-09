@@ -18,7 +18,7 @@ import config
 import utils
 
 warnings.filterwarnings("ignore")
-utils.setup_logging(__file__)
+# utils.setup_logging(__file__)
 
 # --- 特徵彙總的策略模式 (Strategy Pattern) ---
 
@@ -355,4 +355,5 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     logging.debug(f"Arguments: {args.freq}")
+    utils.setup_logging(__file__)
     run_feature_engineering(args.freq)

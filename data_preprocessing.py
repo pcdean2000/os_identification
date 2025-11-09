@@ -15,7 +15,7 @@ import config
 import utils
 
 # 設定此模組的日誌
-utils.setup_logging(__file__)
+# utils.setup_logging(__file__)
 
 class ABCDataPreprocess(ABC):
     """資料前處理的抽象基礎類別 (ABC)"""
@@ -201,4 +201,5 @@ def run_preprocessing():
     logging.info("===== 資料前處理階段結束 =====")
 
 if __name__ == "__main__":
+    utils.setup_logging(__file__)
     run_preprocessing()

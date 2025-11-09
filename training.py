@@ -21,7 +21,7 @@ from sklearn.preprocessing import LabelEncoder
 import config
 import utils
 
-utils.setup_logging(__file__)
+# utils.setup_logging(__file__)
 
 class ModelTrainer:
     """
